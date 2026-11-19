@@ -388,67 +388,90 @@ async function getDeals(env, url) {
 const PAGE_HTML = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Game Deals — free &amp; discounted games</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0b0e14;--card:#141926;--card2:#1b2133;--text:#e8ecf4;--muted:#9aa4b8;--accent:#7c5cff;--green:#22c55e;--red:#ef4444;--border:#232b40}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{padding:28px 20px 8px;max-width:1200px;margin:0 auto}
-h1{margin:0;font-size:28px}h1 span{color:var(--accent)}
-.sub{color:var(--muted);margin:6px 0 0;font-size:14px}
-main{max-width:1200px;margin:0 auto;padding:12px 20px 60px}
+:root{--bg:#07090d;--card:#10141c;--card2:#171d29;--text:#f2f4f8;--muted:#8a93a5;--green:#2ee06f;--amber:#f5a623;--blue:#6cb6ff;--border:#1e2632;--border2:#2a3342}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+h1,h2,h3,.cond{font-family:Oswald,'Arial Narrow',Impact,sans-serif}
+header{padding:18px 20px 0;max-width:980px;margin:0 auto}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.topbar .sub{color:var(--muted);font-size:14px;margin:0}
+main{max-width:980px;margin:0 auto;padding:6px 20px 60px}
 section{margin-top:26px}
-h2{font-size:18px;margin:0 0 12px}
-.free-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
-.free-card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
-.free-card img{width:100%;height:150px;object-fit:cover;display:block;background:#000}
-.free-body{padding:12px 14px}
-.free-body h3{margin:0 0 6px;font-size:16px}
-.free-body p{margin:0 0 10px;color:var(--muted);font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.badge{display:inline-block;background:var(--green);color:#04120a;font-weight:700;font-size:12px;padding:3px 8px;border-radius:999px}
-.badge.soon{background:#f59e0b;color:#221503}
-.countdown{color:var(--muted);font-size:13px;margin-left:8px}
-.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:13px;padding:8px 14px;border-radius:9px;border:0;cursor:pointer}
-.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
-.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
-.controls input[type=search]{flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px 12px;font-size:14px}
-.controls select{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px;font-size:14px}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
-.chip{background:var(--card);border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer}
-.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-.tabs{display:flex;gap:8px}
-.tab{background:var(--card);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:8px 14px;font-size:14px;cursor:pointer}
-.tab.on{background:var(--text);color:#111;border-color:var(--text)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:14px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;position:relative}
-.card img{width:100%;height:110px;object-fit:cover;display:block;background:#000}
-.card-body{padding:11px 12px 12px}
-.card-body h3{margin:0 0 4px;font-size:14px;line-height:1.3;min-height:36px}
-.store{color:var(--muted);font-size:12px}
-.price-row{display:flex;align-items:baseline;gap:8px;margin-top:8px}
-.sale{font-weight:800;font-size:17px}.normal{color:var(--muted);text-decoration:line-through;font-size:13px}
-.off{background:var(--red);color:#fff;font-weight:700;font-size:12px;padding:2px 7px;border-radius:6px;margin-left:auto}
-.meta{color:var(--muted);font-size:12px;margin-top:6px}
-.star{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.65);border:1px solid var(--border);color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:15px}
-.star.saved{color:#ffd166;border-color:#ffd166}
-.card a.deal-link{display:block;margin-top:9px;color:var(--accent);font-size:13px;font-weight:600;text-decoration:none}
+h2{font-size:30px;margin:0 0 14px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+h2 .count{color:var(--muted);font-size:22px;margin-left:10px}
+h2 .green{color:var(--green)}
+h2.amber{color:var(--amber)}
+.sub{color:var(--muted);margin:6px 0 0;font-size:14px}
+.free-grid{display:flex;flex-direction:column;gap:16px}
+.free-card{background:var(--card);border:1px solid var(--border);overflow:hidden}
+.free-media{position:relative}
+.free-media img{width:100%;height:230px;object-fit:cover;display:block;background:#000}
+.free-tag{position:absolute;top:12px;left:12px;background:var(--green);color:#04120a;font-family:Oswald,sans-serif;font-weight:700;font-size:17px;letter-spacing:.5px;padding:6px 12px;text-transform:uppercase}
+.free-tag.soon{background:var(--amber);color:#221503}
+.free-left{position:absolute;right:12px;bottom:12px;background:rgba(0,0,0,.75);color:#fff;font-size:13px;font-weight:600;padding:6px 10px}
+.free-body{padding:16px 18px 18px}
+.free-body h3{margin:0 0 8px;font-size:21px;font-family:Inter,sans-serif;font-weight:700}
+.free-body p{margin:0 0 12px;color:var(--muted);font-size:14px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.free-price{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.free-price .sale{color:var(--green);font-weight:800;font-size:24px}
+.free-price .normal{color:var(--muted);text-decoration:line-through;font-size:16px}
+.free-price .on{color:var(--muted);font-size:14px}
+.free-dates{color:var(--muted);font-size:13px;margin:8px 0 14px}
+.badge{display:inline-block;background:var(--green);color:#04120a;font-family:Oswald,sans-serif;font-weight:700;font-size:18px;letter-spacing:.5px;padding:6px 12px;text-transform:uppercase}
+.badge.soon{background:var(--amber);color:#221503}
+.btn{display:inline-block;background:var(--green);color:#04120a;text-decoration:none;font-family:Oswald,sans-serif;font-weight:700;font-size:18px;letter-spacing:.5px;text-transform:uppercase;padding:12px 22px;border:0;cursor:pointer;border-radius:0}
+.btn.ghost{background:var(--card2);border:1px solid var(--border2);color:var(--text);font-size:16px;padding:11px 18px}
+.btn.refresh{background:var(--card2);color:#fff;font-size:16px;padding:10px 18px}
+.controls{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.controls input[type=search]{width:100%;background:#0d1117;border:1px solid var(--border2);color:var(--text);border-radius:0;padding:13px 14px;font-size:15px}
+.sort-row{display:flex;align-items:center;gap:12px}
+.sort-row label{color:var(--muted);font-size:15px}
+.sort-row select{background:var(--card2);border:1px solid var(--border2);color:var(--text);border-radius:0;padding:10px 12px;font-size:15px}
+.tabs{display:flex;flex-wrap:wrap;gap:10px}
+.tab{background:var(--card2);border:0;color:var(--muted);font-family:Oswald,sans-serif;font-weight:700;font-size:19px;letter-spacing:.5px;text-transform:uppercase;padding:11px 20px;cursor:pointer;border-radius:0}
+.tab.on{background:var(--green);color:#04120a}
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.chip{background:var(--card2);border:0;color:var(--muted);border-radius:0;padding:11px 16px;font-size:15px;font-weight:600;cursor:pointer}
+.chip.on{background:#fff;color:#111}
+.grid{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+.card{background:var(--card);border:1px solid var(--border);position:relative;display:flex;min-height:150px}
+.card img{width:150px;min-width:150px;object-fit:cover;display:block;background:#000}
+.card-body{padding:14px 16px;flex:1;min-width:0}
+.card-body h3{margin:0 0 8px;font-size:17px;line-height:1.35;font-family:Inter,sans-serif;font-weight:700;padding-right:28px}
+.store-pill{display:inline-block;border:1px solid var(--border2);color:var(--muted);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;padding:4px 8px;margin-bottom:10px}
+.meta{color:var(--muted);font-size:13px;margin-left:10px}
+.meta .steam{color:var(--blue)}
+.price-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:2px}
+.sale{color:var(--green);font-weight:800;font-size:26px}
+.normal{color:var(--muted);text-decoration:line-through;font-size:16px}
+.deal-link{color:var(--blue);font-size:16px;font-weight:600;text-decoration:underline;margin-left:auto}
+.star{position:absolute;top:10px;right:14px;background:none;border:0;color:var(--muted);cursor:pointer;font-size:21px;line-height:1;padding:0}
+.star.saved{color:#ffd166}
 .empty{color:var(--muted);padding:30px 0;text-align:center}
 footer{color:var(--muted);font-size:12px;margin-top:30px}
+@media (max-width:560px){
+  h2{font-size:26px}
+  .card img{width:118px;min-width:118px}
+  .sale{font-size:22px}
+  .free-media img{height:190px}
+}
 </style></head>
 <body>
-<header><h1>🎮 Game <span>Deals</span></h1>
-<p class="sub">Free &amp; discounted games from Epic, Steam, GOG, Humble, Fanatical, PlayStation Store and Nintendo eShop. Prices in USD.</p></header>
+<header><div class="topbar"><span class="sub" id="top-status"></span><button class="btn refresh" id="refresh">↻ Refresh</button></div>
+<p class="sub" id="status"></p></header>
 <main>
-<section id="free-section"><h2>Free right now on Epic</h2><div class="free-grid" id="free-now"></div>
-<h2 style="margin-top:22px">Coming free next</h2><div class="free-grid" id="free-next"></div></section>
-<section><h2>All deals <span id="deal-count" style="color:var(--muted);font-size:14px"></span></h2>
-<div class="controls">
+<section id="free-section"><h2>Free right now <span class="green">— Epic</span></h2><div class="free-grid" id="free-now"></div>
+<h2 class="amber" style="margin-top:28px">Coming free soon</h2><div class="free-grid" id="free-next"></div></section>
+<section><div class="controls">
+<div class="tabs"><button class="tab on" data-type="all">All deals</button><button class="tab" data-type="free">Free</button><button class="tab" data-type="discounted">Discounted</button><button class="tab" data-type="saved">★ Watchlist <span id="saved-n"></span></button></div>
 <input type="search" id="q" placeholder="Search games…">
-<select id="sort"><option value="best">Best deal</option><option value="savings">Biggest saving</option><option value="price_low">Lowest price</option><option value="rating">Highest rated</option></select>
-<div class="tabs"><button class="tab on" data-type="all">All</button><button class="tab" data-type="free">Free</button><button class="tab" data-type="discounted">Discounted</button><button class="tab" data-type="saved">☆ Watchlist <span id="saved-n"></span></button></div>
-<button class="btn ghost" id="refresh">↻ Refresh</button>
+<div class="sort-row"><label for="sort">Sort</label><select id="sort"><option value="best">Best deal</option><option value="savings">Biggest saving</option><option value="price_low">Lowest price</option><option value="rating">Highest rated</option></select></div>
 </div>
 <div class="chips" id="chips"></div>
+<h2>Top deals <span class="count" id="deal-count"></span></h2>
 <div class="grid" id="grid"></div>
-<p class="sub" id="status"></p>
 <footer>Deals refresh daily. Cover art is served by the stores themselves. Not affiliated with Epic, Steam, GOG, Sony or Nintendo.</footer>
 </section></main>
 <script>
@@ -456,7 +479,8 @@ const device = localStorage.getItem('gd-device') || (()=>{const id='d-'+Math.ran
 let state={store:'all',type:'all',q:'',sort:'best',stores:[],saved:new Set()};
 const $=s=>document.querySelector(s);
 function fmt(n){return '$'+Number(n).toFixed(2)}
-function countdown(iso){if(!iso)return '';const ms=new Date(iso)-Date.now();if(ms<=0)return 'ends soon';const d=Math.floor(ms/864e5),h=Math.floor(ms%864e5/36e5);return d>0?('ends in '+d+'d '+h+'h'):('ends in '+h+'h '+Math.floor(ms%36e5/6e4)+'m')}
+function left(iso){if(!iso)return '';const ms=new Date(iso)-Date.now();if(ms<=0)return 'ends soon';const d=Math.floor(ms/864e5),h=Math.floor(ms%864e5/36e5),m=Math.floor(ms%36e5/6e4);return d>0?(d+'d '+h+'h left'):(h>0?(h+'h '+m+'m left'):(m+'m left'))}
+function fmtDate(iso){if(!iso)return '';return new Date(iso).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
 async function load(){
   const p=new URLSearchParams({store:state.store,type:state.type==='saved'?'all':state.type,q:state.q,sort:state.sort,limit:200,device});
   const r=await fetch('/api/deals?'+p); const data=await r.json();
@@ -464,19 +488,29 @@ async function load(){
   renderChips(); renderFree(data.epicFree||[]);
   let deals=data.deals||[];
   if(state.type==='saved') deals=deals.filter(d=>d.saved);
-  $('#deal-count').textContent='· '+data.totalDeals+' deals';
+  $('#deal-count').textContent=data.totalDeals+' deals';
   $('#saved-n').textContent=data.savedCount?('('+data.savedCount+')'):'';
-  $('#status').textContent=(data.asOf?('Updated '+new Date(data.asOf).toLocaleString()+' · '):'')+Object.entries(data.sourceStatus||{}).map(([k,v])=>k+': '+v).join(' · ');
+  const ps=(state.stores.find(s=>s.storeId==='playstation')||{}).count||0;
+  const nin=(state.stores.find(s=>s.storeId==='nintendo')||{}).count||0;
+  $('#top-status').textContent=(data.freeCount||0)+' free · updated just now · prices in USD';
+  $('#status').textContent='Updated just now — '+data.totalDeals+' deals tracked, including '+ps+' PlayStation and '+nin+' Nintendo.';
   renderGrid(deals);
 }
 function renderChips(){
   const all=[{storeId:'all',storeName:'All stores',count:null},...state.stores];
-  $('#chips').innerHTML=all.map(s=>'<button class="chip'+(state.store===s.storeId?' on':'')+'" data-store="'+s.storeId+'">'+s.storeName+(s.count!=null?' ('+s.count+')':'')+'</button>').join('');
+  $('#chips').innerHTML=all.map(s=>'<button class="chip'+(state.store===s.storeId?' on':'')+'" data-store="'+s.storeId+'">'+s.storeName+(s.count!=null?' · '+s.count:'')+'</button>').join('');
   document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{state.store=c.dataset.store;document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');load()});
 }
 function renderFree(list){
   const now=list.filter(e=>e.status==='free_now'), next=list.filter(e=>e.status==='coming_soon');
-  const card=e=>'<div class="free-card">'+(e.image_url?'<img src="'+e.image_url+'" alt="">':'')+'<div class="free-body"><h3>'+e.title+'</h3><p>'+(e.description||'')+'</p><span class="badge'+(e.status==='free_now'?'':' soon')+'">'+(e.status==='free_now'?'FREE':'COMING SOON')+'</span><span class="countdown">'+countdown(e.ends_at)+'</span><div style="margin-top:10px"><a class="btn" href="'+e.store_url+'" target="_blank" rel="noopener">Claim on Epic</a> <button class="btn ghost" data-k="'+e.epic_key+'" onclick="toggleSave(this.dataset.k,this)">'+(e.saved?'★ Saved':'☆ Watch')+'</button></div></div></div>';
+  const card=e=>{
+    const isNow=e.status==='free_now';
+    const media='<div class="free-media">'+(e.image_url?'<img src="'+e.image_url+'" alt="">':'')+'<span class="free-tag'+(isNow?'':' soon')+'">'+(isNow?'Free now':'Free soon')+'</span><span class="free-left">⏱ '+(isNow?left(e.ends_at):left(e.starts_at))+'</span></div>';
+    const price='<div class="free-price"><span class="sale">'+fmt(0)+'</span>'+(e.original_price?'<span class="normal">'+fmt(e.original_price)+'</span>':'')+'<span class="on">on Epic Games Store</span></div>';
+    const dates=isNow?('<div class="free-dates">Claim by '+fmtDate(e.ends_at)+'</div>'):('<div class="free-dates">Starts '+fmtDate(e.starts_at)+' · ends '+fmtDate(e.ends_at)+'</div>');
+    const btn=isNow?('<a class="btn" href="'+e.store_url+'" target="_blank" rel="noopener">Claim free →</a>'):('<a class="btn" href="'+e.store_url+'" target="_blank" rel="noopener">View on Epic →</a>');
+    return '<div class="free-card">'+media+'<div class="free-body"><h3>'+e.title+'</h3><p>'+(e.description||'')+'</p>'+price+dates+'<div>'+btn+' <button class="btn ghost" data-k="'+e.epic_key+'" onclick="toggleSave(this.dataset.k,this)">'+(e.saved?'★ Saved':'☆ Watch')+'</button></div></div></div>';
+  };
   $('#free-now').innerHTML=now.length?now.map(card).join(''):'<p class="empty">No free games right now — check back Thursday.</p>';
   $('#free-next').innerHTML=next.length?next.map(card).join(''):'<p class="empty">Nothing announced yet.</p>';
 }
@@ -484,13 +518,13 @@ function renderGrid(deals){
   if(!deals.length){$('#grid').innerHTML='<p class="empty">No deals match those filters.</p>';return}
   $('#grid').innerHTML=deals.map(d=>{
     const pct=Math.round(d.savings||0);
-    const rating=d.steam_rating_percent?('Steam '+d.steam_rating_percent+'% ('+d.steam_rating_count+')'): (d.metacritic_score?('Metacritic '+d.metacritic_score):'');
+    const isFree=d.is_free||d.sale_price===0;
+    const meta=(d.metacritic_score?('Metacritic '+d.metacritic_score):'')+(d.steam_rating_percent?(' <span class="steam">Steam '+d.steam_rating_percent+'% positive</span>'):'');
     return '<div class="card"><button class="star'+(d.saved?' saved':'')+'" data-k="'+d.deal_key+'" onclick="toggleSave(this.dataset.k,this)">'+(d.saved?'★':'☆')+'</button>'
     +(d.thumb?'<img src="'+d.thumb+'" alt="" loading="lazy">':'')
-    +'<div class="card-body"><h3>'+d.title+'</h3><div class="store">'+d.store_name+(d.platform?' · '+d.platform:'')+'</div>'
-    +'<div class="price-row"><span class="sale">'+fmt(d.sale_price)+'</span><span class="normal">'+fmt(d.normal_price)+'</span><span class="off">-'+pct+'%</span></div>'
-    +(rating?'<div class="meta">'+rating+'</div>':'')
-    +'<a class="deal-link" href="'+d.deal_url+'" target="_blank" rel="noopener">View deal →</a></div></div>';
+    +'<div class="card-body"><h3>'+d.title+'</h3><div><span class="store-pill">'+d.store_name+(d.platform?' · '+d.platform:'')+'</span>'+(meta?'<span class="meta">'+meta+'</span>':'')+'</div>'
+    +'<div class="price-row"><span class="badge'+(isFree?'':' soon')+'">'+(isFree?'Free':'-'+pct+'%')+'</span><span class="sale">'+fmt(d.sale_price)+'</span><span class="normal">'+fmt(d.normal_price)+'</span><a class="deal-link" href="'+d.deal_url+'" target="_blank" rel="noopener">View deal →</a></div>'
+    +'</div></div>';
   }).join('');
 }
 async function toggleSave(key,btn){
