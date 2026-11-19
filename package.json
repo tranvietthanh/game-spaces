@@ -1,0 +1,1 @@
+{"description":"Free and discounted games tracker — Epic, Steam, GOG, Humble, Fanatical, PlayStation Store and Nintendo eShop","devDependencies":{"wrangler":"^4.165.0"},"name":"game-deals","private":true,"scripts":{"deploy":"wrangler deploy","dev":"wrangler dev","migrate":"wrangler d1 migrations apply game-deals --remote"},"type":"module","version":"1.0.0"}
