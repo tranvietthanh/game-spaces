@@ -437,7 +437,7 @@ h2.amber{color:var(--amber)}
 .chip.on{background:#fff;color:#111}
 .grid{display:flex;flex-direction:column;gap:14px;margin-top:16px}
 .card{background:var(--card);border:1px solid var(--border);position:relative;display:flex;min-height:150px}
-.card img{width:150px;min-width:150px;object-fit:cover;display:block;background:#000}
+.card img{width:150px;min-width:150px;object-fit:contain;background:#000;display:block}
 .card-body{padding:14px 16px;flex:1;min-width:0}
 .card-body h3{margin:0 0 8px;font-size:17px;line-height:1.35;font-family:Inter,sans-serif;font-weight:700;padding-right:28px}
 .store-pill{display:inline-block;border:1px solid var(--border2);color:var(--muted);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;padding:4px 8px;margin-bottom:10px}
