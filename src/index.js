@@ -394,10 +394,10 @@ const PAGE_HTML = `<!DOCTYPE html>
 :root{--bg:#07090d;--card:#10141c;--card2:#171d29;--text:#f2f4f8;--muted:#8a93a5;--green:#2ee06f;--amber:#f5a623;--blue:#6cb6ff;--border:#1e2632;--border2:#2a3342}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 h1,h2,h3,.cond{font-family:Oswald,'Arial Narrow',Impact,sans-serif}
-header{padding:18px 20px 0;max-width:980px;margin:0 auto}
+header{padding:18px 20px 0;max-width:1280px;margin:0 auto}
 .topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .topbar .sub{color:var(--muted);font-size:14px;margin:0}
-main{max-width:980px;margin:0 auto;padding:6px 20px 60px}
+main{max-width:1280px;margin:0 auto;padding:6px 20px 60px}
 section{margin-top:26px}
 h2{font-size:30px;margin:0 0 14px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
 h2 .count{color:var(--muted);font-size:22px;margin-left:10px}
@@ -451,6 +451,10 @@ h2.amber{color:var(--amber)}
 .star.saved{color:#ffd166}
 .empty{color:var(--muted);padding:30px 0;text-align:center}
 footer{color:var(--muted);font-size:12px;margin-top:30px}
+@media (min-width:1000px){
+  .free-grid{display:grid;grid-template-columns:repeat(2,1fr)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+}
 @media (max-width:560px){
   h2{font-size:26px}
   .card img{width:118px;min-width:118px}
