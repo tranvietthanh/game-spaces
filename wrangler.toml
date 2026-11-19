@@ -1,0 +1,13 @@
+name = "game-deals"
+main = "src/index.js"
+compatibility_date = "2026-11-19"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "game-deals"
+database_id = "a83b9479-7a40-4f78-90de-a628953f3795"
+
+[triggers]
+# Daily refresh at 22:06 UTC = 09:06 AEDT (09:06 in Sydney/Melbourne daylight time).
+crons = ["6 22 * * *"]
