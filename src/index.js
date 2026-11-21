@@ -2,81 +2,17 @@
 // Serves the deals board, exposes a JSON API, and refreshes deals daily
 // (scheduled cron) or on demand via POST /api/refresh.
 //
-// Data sources (all public, no keys except Nintendo's public search key):
+// Data sources (all public; Nintendo uses a public search-only key, PlayStation
+// uses a free PS Deals API key stored as the PSDEALS_API_KEY Worker secret):
 //   - CheapShark API  (PC stores: Steam, Epic, GOG, Humble, Fanatical, ...)
 //   - Epic Games free-games promotions feed
 //   - Nintendo eShop catalogue (Algolia search index, public search-only key)
-//   - PlayStation Store "All deals" category (GraphQL persisted query)
+//   - PlayStation Store deals via the PS Deals public API (api.psdeals.net)
 //
 // Cover art is hotlinked from the stores' own image servers; nothing is
 // downloaded or re-hosted. Prices are USD as listed by the US stores.
 
 const UA = 'GameDeals/1.0 (https://github.com/tranvietthanh/game-spaces)';
-const PS_CATEGORY_ID = '3f772501-f6f8-49b7-abac-874a88ca4897';
-const PS_QUERY = `query categoryGridRetrieve(
-    $id: ID!,
-    $pageArgs: PageArgs,
-    $sortBy: CategorySortingOptionInput,
-    $facetOptions: [String],
-    $filterBy: [String],
-    $maxResults: Int,
-  ) {
-      categoryGridRetrieve(id: $id,
-        pageArgs: $pageArgs,
-        sortBy: $sortBy,
-        facetOptions: $facetOptions,
-        filterBy: $filterBy,
-        maxResults: $maxResults
-        ) {
-        id,
-        sortedBy { name isAscending displayName }
-        sortingOptions { name isAscending displayName }
-        facetOptions { name displayName values { displayName count key } }
-        pageInfo { totalCount, offset, size, isLast },
-        products {
-          id, name, npTitleId, telemetryData,
-          price { ... priceFragment },
-          platforms,
-          localizedStoreDisplayClassification,
-          storeDisplayClassification,
-          media { type, url, role },
-          personalizedMeta { ... personalizedMetaFragment },
-          skus { type },
-        }
-        concepts {
-          id, name, telemetryData,
-          media { type, url, role },
-          personalizedMeta { ... personalizedMetaFragment },
-          price { ... priceFragment },
-          products { id },
-        }
-        localizedName
-        reportingName
-      }
-    }
-fragment personalizedMetaFragment on PersonalizedMeta {
-    hasMediaOverrides
-    media { role type url }
-  }
-fragment priceFragment on SkuPrice {
-    basePrice
-    discountedPrice
-    discountText
-    isFree
-    isExclusive
-    isTiedToSubscription
-    serviceBranding
-    upsellServiceBranding
-    upsellText
-    includesBundleOffer
-    telemetryData
-  }
-`;
-// sha256 of the printed query document above (persisted-query id). The
-// PlayStation endpoint only serves whitelisted queries; this is the hash of
-// the exact query the official storefront sends. Recomputed at runtime is
-// unnecessary — the query text is fixed.
-const PS_QUERY_HASH = '27e2d837ca3a032c5fee2b4749741e9f00c121c4427b73dc9f14a9446564022b';
 
 const NINTENDO_APP_ID = 'U3B6GR4UA3';
 const NINTENDO_API_KEY = 'a29c6927638bfd8cee23993e51e721c9';
@@ -227,64 +163,66 @@ async function fetchNintendo() {
   return { deals, debugSample: debugSample ? Object.keys(debugSample) : null };
 }
 
-async function fetchPlayStation() {
-  const headers = {
-    'Content-Type': 'application/json',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-    Referer: `https://store.playstation.com/en-us/category/${PS_CATEGORY_ID}/1`,
-    Origin: 'https://store.playstation.com',
-    Accept: 'application/json',
-    'apollographql-client-name': 'ems-web',
-  };
+const PSDEALS_API = 'https://api.psdeals.net/public/v1';
+
+// PS Deals public API (https://psdeals.net/api). Free tier: 500 requests/month,
+// 25 results/page, current prices only, attribution required. The site fetches
+// the 125 biggest US discounts (5 pages x 25) once a day, ~150 requests/month,
+// inside the free allowance. The key lives in the PSDEALS_API_KEY Worker
+// secret — apply for a free key at https://psdeals.net/api (project approval
+// required). This replaced the Sony GraphQL feed in Nov 2026: Sony rotates
+// the storefront's persisted-query hash and no hash derivable from the public
+// storefront code is accepted by its whitelist, so the GraphQL route cannot
+// be automated (see scratch-ps-hash/FINDINGS.md).
+async function fetchPlayStation(env) {
+  const key = env.PSDEALS_API_KEY;
+  if (!key) throw new Error('playstation: PS Deals API key not configured (PSDEALS_API_KEY secret missing)');
+  const headers = { Authorization: 'Bearer ' + key, Accept: 'application/json', 'User-Agent': UA };
   const deals = [];
-  let offset = 0;
-  for (let page = 0; page < 5; page++) {
-    const body = {
-      operationName: 'categoryGridRetrieve',
-      variables: { id: PS_CATEGORY_ID, pageArgs: { size: 24, offset } },
-      extensions: { persistedQuery: { version: 1, sha256Hash: PS_QUERY_HASH } },
-    };
-    let res = await fetch('https://web.np.playstation.com/api/graphql/v1/op', { method: 'POST', headers, body: JSON.stringify(body) });
-    let data = await res.json().catch(() => ({}));
-    if (data?.errors?.[0]?.extensions?.code === 'PERSISTED_QUERY_NOT_IN_LIST' || data?.message === 'Query not whitelisted') {
-      // Fall back to sending the full query document.
-      res = await fetch('https://web.np.playstation.com/api/graphql/v1/op', {
-        method: 'POST', headers,
-        body: JSON.stringify({ operationName: 'categoryGridRetrieve', variables: body.variables, query: PS_QUERY }),
-      });
-      data = await res.json().catch(() => ({}));
+  for (let page = 1; page <= 5; page++) {
+    const url = `${PSDEALS_API}/deals?region=US&type=GAME&sort=-discount&limit=25&page=${page}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error('playstation PS Deals API HTTP ' + res.status);
+    const data = await res.json();
+    const rows = Array.isArray(data?.data) ? data.data : [];
+    for (const p of rows) {
+      const d = psDealsProductToDeal(p);
+      if (d) deals.push(d);
     }
-    const grid = data?.data?.categoryGridRetrieve;
-    if (!grid || !Array.isArray(grid.products)) {
-      throw new Error('playstation unexpected response: ' + JSON.stringify(data).slice(0, 300));
-    }
-    for (const p of grid.products) {
-      const base = parsePrice(p.price?.basePrice);
-      const disc = parsePrice(p.price?.discountedPrice);
-      if (!base || disc >= base) continue;
-      const img = (p.media || []).find(m => m.type === 'IMAGE') || (p.media || [])[0];
-      const platforms = Array.isArray(p.platforms) ? p.platforms.join(' · ') : null;
-      deals.push({
-        dealKey: 'ps:' + p.id,
-        title: p.name,
-        storeId: 'playstation',
-        storeName: 'PlayStation Store',
-        salePrice: disc, normalPrice: base,
-        savings: Math.round((1 - disc / base) * 100),
-        isFree: disc === 0 ? 1 : 0,
-        platform: platforms,
-        thumb: img?.url || null,
-        dealUrl: `https://store.playstation.com/en-us/product/${p.id}`,
-        dealRating: 0, metacriticScore: 0, steamRatingPercent: 0, steamRatingCount: 0,
-      });
-    }
-    const pageInfo = grid.pageInfo || {};
-    offset += (grid.products || []).length;
-    if (pageInfo.isLast || !grid.products.length) break;
+    if (!data?.meta?.has_more || !rows.length) break;
   }
   return deals;
 }
 
+// Map one PS Deals API product onto the site's deal row. Returns null for
+// anything without a live ordinary discount (member-only prices, expired
+// sales, or no current price). Uses the ordinary price, not the PS+ member
+// price, so the discount shown is what any shopper gets.
+function psDealsProductToDeal(p) {
+  const pricing = p?.pricing || {};
+  if (pricing.expired || pricing.available === false) return null;
+  // A null price means "no price available" (per the API docs); "0.00" means free.
+  if (pricing.current == null || pricing.regular == null) return null;
+  const regular = parsePrice(pricing.regular);
+  const sale = parsePrice(pricing.current);
+  if (!regular || sale == null || Number.isNaN(sale) || sale >= regular) return null;
+  const platforms = Array.isArray(p.platforms) ? p.platforms.map(x => x.name).filter(Boolean).join(' · ') : null;
+  const pct = pricing.discount_percent != null
+    ? Math.round(Number(pricing.discount_percent))
+    : Math.round((1 - sale / regular) * 100);
+  return {
+    dealKey: 'psd:' + p.id,
+    title: p.name,
+    storeId: 'playstation',
+    storeName: 'PlayStation Store',
+    salePrice: sale, normalPrice: regular, savings: pct,
+    isFree: sale === 0 ? 1 : 0,
+    platform: platforms || null,
+    thumb: p.image_url || null,
+    dealUrl: p.store_url || ('https://store.playstation.com/en-us/product/' + (p.store_id || '')),
+    dealRating: 0, metacriticScore: Number(p.ratings?.metacritic) || 0, steamRatingPercent: 0, steamRatingCount: 0,
+  };
+}
 async function refreshAll(env) {
   const status = {};
   const startedAt = new Date().toISOString();
@@ -296,7 +234,7 @@ async function refreshAll(env) {
   catch (e) { status.epic = 'error: ' + e.message; }
   try { const r = await fetchNintendo(); ninDeals = r.deals; ninDebug = r.debugSample; status.nintendo = 'ok'; }
   catch (e) { status.nintendo = 'error: ' + e.message; }
-  try { psDeals = await fetchPlayStation(); status.playstation = 'ok'; }
+  try { psDeals = await fetchPlayStation(env); status.playstation = 'ok'; }
   catch (e) { status.playstation = 'error: ' + e.message; }
 
   const all = [...pcDeals, ...ninDeals, ...psDeals];
@@ -476,7 +414,7 @@ footer{color:var(--muted);font-size:12px;margin-top:30px}
 <div class="chips" id="chips"></div>
 <h2>Top deals <span class="count" id="deal-count"></span></h2>
 <div class="grid" id="grid"></div>
-<footer>Deals refresh daily. Cover art is served by the stores themselves. Not affiliated with Epic, Steam, GOG, Sony or Nintendo.</footer>
+<footer>Deals refresh daily. Cover art is served by the stores themselves. Not affiliated with Epic, Steam, GOG, Sony or Nintendo. PlayStation prices via PS Deals (psdeals.net).</footer>
 </section></main>
 <script>
 const device = localStorage.getItem('gd-device') || (()=>{const id='d-'+Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem('gd-device',id);return id})();

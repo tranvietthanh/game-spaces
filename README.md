@@ -30,19 +30,34 @@ are shown up top with a countdown and claim link.
 | PC stores | CheapShark deals API, sorted by deal rating (needs a descriptive `User-Agent`) |
 | Epic free games | Epic `freeGamesPromotions` feed |
 | Nintendo eShop | Nintendo's public Algolia search index (`store_all_products_en_us`, search-only key embedded in the site) |
-| PlayStation Store | "All deals" category via PlayStation's GraphQL API (persisted query) |
+| PlayStation Store | PS Deals public API (`api.psdeals.net/public/v1/deals`, US region) — needs a free API key as the `PSDEALS_API_KEY` Worker secret |
 
 ### PlayStation feed note
 
-Sony's GraphQL endpoint only serves whitelisted persisted queries. The worker
-sends the exact `categoryGridRetrieve` query the official storefront uses, by
-its persisted-query hash. If Sony rotates the storefront build, the hash can
-change and the PlayStation source will report an error while the other sources
-keep working. To get a fresh hash: open the PlayStation Store "All deals" page
-in a browser, open DevTools → Network, find the POST to
-`web.np.playstation.com/api/graphql/v1/op`, and copy the
-`extensions.persistedQuery.sha256Hash` value into `PS_QUERY_HASH` in
-`src/index.js`.
+PlayStation deals come from the [PS Deals public API](https://psdeals.net/api)
+(`GET /public/v1/deals?region=US&type=GAME&sort=-discount&limit=25`,
+up to 5 pages = the 125 biggest US discounts). The API needs a key:
+sign in at psdeals.net, apply for API access for this project (free tier,
+no card; project approval required), create a key in the dashboard, and
+store it as a Worker secret:
+
+```
+wrangler secret put PSDEALS_API_KEY
+```
+
+Free-tier limits: 500 requests/month, 25 results/page, 10 requests/minute.
+One daily refresh uses ~5 requests (~150/month), inside the allowance.
+Attribution is required on the free plan — the site footer credits PS Deals.
+If the secret is missing, the PlayStation source reports an error and the
+previously stored PS deals are kept (keep-on-failure), so the site still
+shows the last good snapshot.
+
+History: the feed originally used Sony's GraphQL endpoint with a persisted
+query hash. Sony rotates the storefront build, and in Nov 2026 the hash
+stopped being accepted. A thorough investigation
+(`scratch-ps-hash/FINDINGS.md`) proved no hash derivable from the public
+storefront code is accepted by Sony's whitelist (19 variants tested), so
+the GraphQL route cannot be automated — hence the switch to the PS Deals API.
 
 ## Local setup
 
