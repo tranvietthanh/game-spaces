@@ -1,6 +1,9 @@
 // Game Deals — Cloudflare Worker + D1.
-// Serves the deals board, exposes a JSON API, and refreshes deals daily
-// (scheduled cron) or on demand via POST /api/refresh.
+// Serves the deals board, exposes a JSON API, and receives its daily
+// refresh as a push from the Game Deals space via POST /api/sync
+// (Bearer SYNC_SECRET Worker secret). POST /api/refresh stays for
+// manual use; the Worker's own scheduled cron is disabled so it can
+// never overwrite synced data.
 //
 // Data sources (all public; Nintendo uses a public search-only key, PlayStation
 // uses a free PS Deals API key stored as the PSDEALS_API_KEY Worker secret):
@@ -239,12 +242,14 @@ async function refreshAll(env) {
 
   const all = [...pcDeals, ...ninDeals, ...psDeals];
   const db = env.DB;
-  // Replace the snapshot only with sources that succeeded; a failed source
-  // keeps its previous deals instead of wiping them.
+  // Replace the snapshot only with sources that succeeded AND returned
+  // >0 deals; a failed source, or one that returned 0 rows, keeps its
+  // previous deals instead of wiping them (this was the Nintendo 0-deal
+  // wipe: 'ok' with 0 rows used to delete all 80 Nintendo deals).
   const okStores = new Set();
-  if (status.cheapshark === 'ok') for (const d of pcDeals) okStores.add(d.storeId);
-  if (status.nintendo === 'ok') okStores.add('nintendo');
-  if (status.playstation === 'ok') okStores.add('playstation');
+  if (status.cheapshark === 'ok' && pcDeals.length) for (const d of pcDeals) okStores.add(d.storeId);
+  if (status.nintendo === 'ok' && ninDeals.length) okStores.add('nintendo');
+  if (status.playstation === 'ok' && psDeals.length) okStores.add('playstation');
   if (okStores.size) {
     const placeholders = [...okStores].map(() => '?').join(',');
     await db.prepare(`DELETE FROM deals WHERE store_id IN (${placeholders})`).bind(...okStores).run();
@@ -254,7 +259,7 @@ async function refreshAll(env) {
     const batch = all.map(d => stmt.bind(d.dealKey, d.title, d.storeId, d.storeName, d.salePrice, d.normalPrice, d.savings, d.isFree, d.platform, d.thumb, d.dealUrl, d.dealRating, d.metacriticScore, d.steamRatingPercent, d.steamRatingCount));
     for (let i = 0; i < batch.length; i += 50) await db.batch(batch.slice(i, i + 50));
   }
-  if (status.epic === 'ok') {
+  if (status.epic === 'ok' && epicFree.length) {
     await db.prepare('DELETE FROM epic_free').run();
     const stmt = db.prepare(
       'INSERT OR REPLACE INTO epic_free (epic_key,title,description,image_url,store_url,original_price,status,starts_at,ends_at) VALUES (?,?,?,?,?,?,?,?,?)',
@@ -265,6 +270,127 @@ async function refreshAll(env) {
   await db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)')
     .bind('last_refresh', JSON.stringify({ at: startedAt, status, counts: { cheapshark: pcDeals.length, epic: epicFree.length, nintendo: ninDeals.length, playstation: psDeals.length } })).run();
   return { at: startedAt, status, counts: { cheapshark: pcDeals.length, epic: epicFree.length, nintendo: ninDeals.length, playstation: psDeals.length }, nintendoSampleKeys: ninDebug };
+}
+
+// ---------------------------------------------------------------------------
+// Push sync from the Game Deals space (POST /api/sync).
+// The space refreshes from sources that block Cloudflare Worker IPs
+// (CheapShark 403s the Worker, Sony's GraphQL hash can't be automated),
+// so instead of re-fetching here it pushes its fresh snapshot and this
+// endpoint writes it straight into D1. Auth: Bearer <SYNC_SECRET>
+// (Worker secret SYNC_SECRET). A source group that is missing or empty
+// keeps its old rows; only groups with >0 rows replace their rows.
+// The watchlist table is never touched.
+// ---------------------------------------------------------------------------
+
+const SYNC_SOURCES = ['cheapshark', 'playstation', 'nintendo'];
+
+function syncNum(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+async function syncFromSpace(env, request) {
+  if (!env.SYNC_SECRET) {
+    return new Response(JSON.stringify({ ok: false, error: 'sync secret not configured' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
+  }
+  const auth = request.headers.get('Authorization') || '';
+  if (auth !== 'Bearer ' + env.SYNC_SECRET) {
+    return new Response(JSON.stringify({ ok: false, error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  }
+  let body;
+  try { body = await request.json(); }
+  catch (e) { return new Response(JSON.stringify({ ok: false, error: 'invalid JSON body' }), { status: 400, headers: { 'Content-Type': 'application/json' } }); }
+  if (!body || typeof body !== 'object') {
+    return new Response(JSON.stringify({ ok: false, error: 'invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+  const deals = Array.isArray(body.deals) ? body.deals : [];
+  const epicFree = Array.isArray(body.epicFree) ? body.epicFree : [];
+  if (deals.length > 1000 || epicFree.length > 50) {
+    return new Response(JSON.stringify({ ok: false, error: 'payload too large' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+  // Validate + coerce deal rows.
+  const groups = { cheapshark: [], playstation: [], nintendo: [] };
+  for (const d of deals) {
+    if (!d || typeof d !== 'object') return new Response(JSON.stringify({ ok: false, error: 'invalid deal row' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    if (!SYNC_SOURCES.includes(d.source)) return new Response(JSON.stringify({ ok: false, error: 'invalid deal source: ' + String(d.source) }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    if (!d.dealKey || !d.title || d.storeId == null || !d.storeName || !d.dealUrl) {
+      return new Response(JSON.stringify({ ok: false, error: 'deal missing required fields' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    groups[d.source].push({
+      dealKey: String(d.dealKey),
+      title: String(d.title),
+      storeId: String(d.storeId),
+      storeName: String(d.storeName),
+      salePrice: syncNum(d.salePrice),
+      normalPrice: syncNum(d.normalPrice),
+      savings: syncNum(d.savings),
+      isFree: d.isFree ? 1 : 0,
+      platform: d.platform != null ? String(d.platform) : null,
+      thumb: d.thumb != null ? String(d.thumb) : null,
+      dealUrl: String(d.dealUrl),
+      dealRating: syncNum(d.dealRating),
+      metacriticScore: syncNum(d.metacriticScore),
+      steamRatingPercent: syncNum(d.steamRatingPercent),
+      steamRatingCount: syncNum(d.steamRatingCount),
+    });
+  }
+  // Validate epic rows.
+  const epicRows = [];
+  for (const e of epicFree) {
+    if (!e || typeof e !== 'object' || !e.epicKey || !e.title || (e.status !== 'free_now' && e.status !== 'coming_soon')) {
+      return new Response(JSON.stringify({ ok: false, error: 'invalid epic_free row' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    epicRows.push({
+      epicKey: String(e.epicKey),
+      title: String(e.title),
+      description: e.description != null ? String(e.description) : '',
+      imageUrl: e.imageUrl != null ? String(e.imageUrl) : null,
+      storeUrl: e.storeUrl != null ? String(e.storeUrl) : null,
+      originalPrice: syncNum(e.originalPrice),
+      status: e.status,
+      startsAt: e.startsAt != null ? String(e.startsAt) : null,
+      endsAt: e.endsAt != null ? String(e.endsAt) : null,
+    });
+  }
+
+  const db = env.DB;
+  const dealStmt = db.prepare(
+    'INSERT OR REPLACE INTO deals (deal_key,title,store_id,store_name,sale_price,normal_price,savings,is_free,platform,thumb,deal_url,deal_rating,metacritic_score,steam_rating_percent,steam_rating_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+  );
+  const counts = { cheapshark: groups.cheapshark.length, playstation: groups.playstation.length, nintendo: groups.nintendo.length, epic: epicRows.length };
+  // Replace only sources present with >0 rows; missing/empty keeps old rows.
+  for (const source of SYNC_SOURCES) {
+    const rows = groups[source];
+    if (!rows.length) continue;
+    if (source === 'cheapshark') {
+      const storeIds = [...new Set(rows.map(r => r.storeId))];
+      const placeholders = storeIds.map(() => '?').join(',');
+      await db.prepare(`DELETE FROM deals WHERE store_id IN (${placeholders})`).bind(...storeIds).run();
+    } else {
+      await db.prepare('DELETE FROM deals WHERE store_id = ?').bind(source).run();
+    }
+    const batch = rows.map(d => dealStmt.bind(d.dealKey, d.title, d.storeId, d.storeName, d.salePrice, d.normalPrice, d.savings, d.isFree, d.platform, d.thumb, d.dealUrl, d.dealRating, d.metacriticScore, d.steamRatingPercent, d.steamRatingCount));
+    for (let i = 0; i < batch.length; i += 50) await db.batch(batch.slice(i, i + 50));
+  }
+  if (epicRows.length) {
+    await db.prepare('DELETE FROM epic_free').run();
+    const epicStmt = db.prepare(
+      'INSERT OR REPLACE INTO epic_free (epic_key,title,description,image_url,store_url,original_price,status,starts_at,ends_at) VALUES (?,?,?,?,?,?,?,?,?)',
+    );
+    const batch = epicRows.map(e => epicStmt.bind(e.epicKey, e.title, e.description, e.imageUrl, e.storeUrl, e.originalPrice, e.status, e.startsAt, e.endsAt));
+    for (let i = 0; i < batch.length; i += 50) await db.batch(batch.slice(i, i + 50));
+  }
+  const at = (body.at && typeof body.at === 'string') ? body.at : new Date().toISOString();
+  const status = (body.status && typeof body.status === 'object') ? body.status : {
+    cheapshark: counts.cheapshark ? 'ok' : 'not synced',
+    epic: counts.epic ? 'ok' : 'not synced',
+    playstation: counts.playstation ? 'ok' : 'not synced',
+    nintendo: counts.nintendo ? 'ok' : 'not synced',
+  };
+  await db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)')
+    .bind('last_refresh', JSON.stringify({ at, status, counts, syncedFrom: 'game-deals-space' })).run();
+  return Response.json({ ok: true, counts, at });
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +634,9 @@ export default {
         await env.DB.prepare('INSERT INTO watchlist (device_id, deal_key, saved_at) VALUES (?, ?, ?)').bind(deviceId, dealKey, new Date().toISOString()).run();
         return Response.json({ ok: true, saved: true });
       }
+      if (url.pathname === '/api/sync' && request.method === 'POST') {
+        return await syncFromSpace(env, request);
+      }
       if (url.pathname === '/api/refresh' && request.method === 'POST') {
         const result = await refreshAll(env);
         return Response.json({ ok: true, ...result });
@@ -518,6 +647,9 @@ export default {
     }
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(refreshAll(env));
+    // Disabled: refresh now comes from the Game Deals space push
+    // (POST /api/sync). The Worker cron is cleared (wrangler.toml crons
+    // = [] and deploy.py clears schedules) so a scheduled Worker refresh
+    // can never overwrite synced data.
   },
 };

@@ -18,8 +18,10 @@ are shown up top with a countdown and claim link.
   (`GET /api/deals`, `GET/POST /api/watchlist`, `POST /api/refresh`) and the
   scheduled refresh.
 - **Cloudflare D1** (`game-deals`) — cached deals, Epic free games, watchlist.
-- **Scheduled refresh** — daily cron (`6 22 * * *` UTC = 09:06 AEDT) pulls the
-  latest deals from every source. The page also refreshes when opened if the
+- **Scheduled refresh** — the Game Deals space pushes its fresh snapshot
+  daily (and on manual Refresh) via `POST /api/sync` (see below). The
+  Worker's own scheduled cron is disabled, so a Worker-side refresh can
+  never overwrite synced data. The page also refreshes when opened if the
   data is stale, and there is a Refresh button. If one source fails, its last
   good deals stay visible and the page flags that source as stale.
 
@@ -97,10 +99,34 @@ Attach one any time in the Cloudflare dashboard: Workers & Pages →
 `game-deals` → Settings → Domains → Add a custom domain. No code change or
 redeploy is needed.
 
+## Push sync from the Game Deals space
+
+The space refreshes from sources that block Cloudflare Worker IPs
+(CheapShark returns 403 to the Worker; Sony's GraphQL hash can't be
+automated), so the site does not re-fetch. Instead the space pushes its
+fresh snapshot after every refresh:
+
+- `POST /api/sync` — `Authorization: Bearer <SYNC_SECRET>` (Worker secret
+  `SYNC_SECRET`; set with `wrangler secret put SYNC_SECRET`). No token or a
+  wrong token → 401; secret not configured → 503.
+- Body: `{"at": "<ISO time>", "source": "game-deals-space",
+  "status": {"cheapshark":"ok","epic":"ok","playstation":"ok","nintendo":"ok"},
+  "deals": [{"dealKey","title","storeId","storeName","salePrice","normalPrice",
+  "savings","isFree","platform","thumb","dealUrl","dealRating","metacriticScore",
+  "steamRatingPercent","steamRatingCount","source":"cheapshark|playstation|nintendo"}],
+  "epicFree": [{"epicKey","title","description","imageUrl","storeUrl",
+  "originalPrice","status":"free_now|coming_soon","startsAt","endsAt"}]}` —
+  at most 1000 deals and 50 Epic rows.
+- For each source group with >0 rows, only that source's rows are replaced
+  (CheapShark: by the group's store_ids; PlayStation/Nintendo: by store_id).
+  A missing or empty source group keeps its old rows — it never wipes them.
+  Epic is replaced only if >0 rows are sent. `meta.last_refresh` is updated
+  with `syncedFrom: "game-deals-space"`. The watchlist is never touched.
+
 ## API
 
 - `GET /api/deals?store=all&type=all&q=&sort=best&limit=120&device=<id>` —
   deals, Epic free games, per-store counts, source freshness.
 - `GET /api/watchlist?device=<id>` — saved deals.
 - `POST /api/watchlist` `{deviceId, dealKey}` — toggle a saved deal.
-- `POST /api/refresh` — re-fetch every source now.
+- `POST /api/refresh` — re-fetch every source now (manual use only).
