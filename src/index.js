@@ -364,9 +364,15 @@ async function syncFromSpace(env, request) {
     const rows = groups[source];
     if (!rows.length) continue;
     if (source === 'cheapshark') {
-      const storeIds = [...new Set(rows.map(r => r.storeId))];
-      const placeholders = storeIds.map(() => '?').join(',');
-      await db.prepare(`DELETE FROM deals WHERE store_id IN (${placeholders})`).bind(...storeIds).run();
+      // CheapShark is the PC-stores aggregate: a store can drop out of
+      // the space's top list entirely, so deleting only the store_ids
+      // present in the payload leaves its old deals behind (stale
+      // Humble/Ubisoft leftovers). Clear all PC deals first — PS and
+      // Nintendo rows use store_id 'playstation'/'nintendo' and are
+      // untouched by this delete. This only runs when the group has
+      // >0 rows (empty/missing groups skip the loop above), so the
+      // keep-on-failure rule still holds.
+      await db.prepare(`DELETE FROM deals WHERE store_id NOT IN ('playstation','nintendo')`).run();
     } else {
       await db.prepare('DELETE FROM deals WHERE store_id = ?').bind(source).run();
     }
